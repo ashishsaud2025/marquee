@@ -1,0 +1,243 @@
+/* Tokens */
+:root {
+  --bg: #0B0D10;
+  --surface: #15181D;
+  --surface-2: #1D2127;
+  --line: #2A2F37;
+  --text: #ECEDEE;
+  --text-dim: #8B8F98;
+  --amber: #E8B923;
+  --amber-dim: #A9860F;
+  --live: #33ff00;
+  --danger: #E2604F;
+
+  --font-display: "Bebas Neue", "Inter", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+/* The `hidden` attribute must always win, even over elements that set their
+   own `display` (e.g. .dropzone uses display:flex, which otherwise ties in
+   specificity with the browser default [hidden] rule and can lose depending
+   on stylesheet order). */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+button, input { font-family: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+/* Layout scaffolding */
+.screen { display: none; min-height: 100%; }
+.screen.visible { display: block; }
+
+/* Landing */
+#landing.visible { display: flex; align-items: center; justify-content: center; padding: 32px 16px; }
+
+.landing-inner { width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: center; gap: 28px; }
+
+.brand { text-align: center; }
+.brand-mark {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 56px;
+  letter-spacing: 4px;
+  color: var(--amber);
+  line-height: 1;
+  text-shadow: 0 0 24px rgba(232, 185, 35, 0.25);
+}
+.brand-sub {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  width: 100%;
+  padding: 22px;
+}
+
+.tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; margin-bottom: 20px; }
+.tab {
+  flex: 1;
+  padding: 9px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.tab.active { background: var(--amber); color: #16130A; }
+
+.entry-pane { display: none; flex-direction: column; gap: 14px; }
+.entry-pane.active { display: flex; }
+
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-dim); }
+.field input {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 15px;
+  outline: none;
+}
+.field input:focus { border-color: var(--amber); }
+.code-input { font-family: var(--font-mono); letter-spacing: 3px; text-transform: uppercase; }
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 11px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.btn-primary { background: var(--amber); color: #16130A; }
+.btn-primary:hover { background: #f2c634; }
+.btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--line); }
+.btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+.btn-small { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); padding: 8px 12px; font-size: 13px; }
+
+.hint { font-size: 12px; color: var(--text-dim); margin: 2px 0 0; }
+.error-text { color: var(--danger); font-size: 13px; min-height: 18px; }
+
+/* Room */
+.room-screen.visible { display: flex; flex-direction: column; height: 100%; }
+
+.room-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.ticket {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px dashed var(--amber-dim);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+.ticket-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-dim); }
+.ticket-code { font-family: var(--font-mono); font-size: 17px; letter-spacing: 3px; color: var(--amber); font-weight: 600; }
+
+.room-meta { display: flex; align-items: center; gap: 10px; color: var(--text-dim); font-size: 13px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+.status-dot.connected { background: var(--live); box-shadow: 0 0 8px rgba(79, 209, 165, 0.6); }
+.badge { background: rgba(232,185,35,0.14); color: var(--amber); border: 1px solid var(--amber-dim); padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+
+#leave-btn { margin-left: auto; }
+
+.room-body { flex: 1; display: flex; min-height: 0; }
+
+/* .stage is the single positioning root for both the dropzone and the
+   player — they're stacked with position:absolute so exactly one of them
+   ever occupies space, instead of sitting side-by-side as flex siblings. */
+.stage { flex: 1; position: relative; background: #000; min-width: 0; overflow: hidden; }
+
+.dropzone {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 2px dashed var(--line);
+  border-radius: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone.dragover { border-color: var(--amber); background: rgba(232,185,35,0.05); }
+.dropzone-inner { text-align: center; color: var(--text-dim); padding: 24px; }
+.dropzone-title { font-family: var(--font-display); font-size: 26px; letter-spacing: 1px; color: var(--text); margin: 0 0 6px; }
+.dropzone-sub { margin: 0; font-size: 14px; }
+
+.upload-progress { width: 240px; height: 6px; background: var(--surface-2); border-radius: 999px; margin: 16px auto 0; overflow: hidden; }
+.upload-progress-bar { height: 100%; width: 0%; background: var(--amber); transition: width 0.15s; }
+
+#player {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  object-fit: contain;
+}
+
+.custom-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(21, 24, 29, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  backdrop-filter: blur(6px);
+}
+.ctrl-btn {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+.ctrl-btn:hover { color: var(--amber); }
+.volume-wrap { display: flex; align-items: center; gap: 8px; }
+.volume-slider { width: 90px; accent-color: var(--amber); cursor: pointer; }
+
+.sidebar { width: 300px; flex-shrink: 0; background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+.sidebar-section { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 14px; }
+.sidebar-section h2 { font-family: var(--font-display); font-size: 18px; letter-spacing: 1px; margin: 0 0 10px; color: var(--text-dim); }
+
+.chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+.chat-msg { font-size: 13px; line-height: 1.4; }
+.chat-msg .who { color: var(--amber); font-weight: 600; margin-right: 6px; }
+.chat-msg.system { color: var(--text-dim); font-style: italic; }
+
+.chat-form { display: flex; gap: 8px; margin-top: 10px; }
+.chat-form input {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 13px;
+  outline: none;
+}
+.chat-form input:focus { border-color: var(--amber); }
+
+@media (max-width: 760px) {
+  .room-body { flex-direction: column; }
+  .sidebar { width: 100%; border-left: none; border-top: 1px solid var(--line); max-height: 220px; }
+  .brand-mark { font-size: 44px; }
+}

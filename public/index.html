@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marquee: watch together</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- LANDING -->
+<main id="landing" class="screen">
+  <div class="landing-inner">
+    <div class="brand">
+      <span class="brand-mark">MARQUEE</span>
+      <span class="brand-sub">pick a film. share the code. press play together.</span>
+    </div>
+
+    <div class="card entry-card">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="host" role="tab" aria-selected="true">Host</button>
+        <button class="tab" data-tab="join" role="tab" aria-selected="false">Join</button>
+      </div>
+
+      <form id="host-form" class="entry-pane active">
+        <label class="field">
+          <span>Your name</span>
+          <input type="text" id="host-name" placeholder="Projectionist" maxlength="24" required>
+        </label>
+        <button type="submit" class="btn btn-primary">Open a room</button>
+        <p class="hint">You'll upload the film and control playback for everyone.</p>
+      </form>
+
+      <form id="join-form" class="entry-pane">
+        <label class="field">
+          <span>Your name</span>
+          <input type="text" id="join-name" placeholder="Guest" maxlength="24" required>
+        </label>
+        <label class="field">
+          <span>Room code</span>
+          <input type="text" id="join-code" placeholder="XK4P9" maxlength="5" required class="code-input">
+        </label>
+        <button type="submit" class="btn btn-primary">Take a seat</button>
+      </form>
+    </div>
+
+    <p id="landing-error" class="error-text" role="alert"></p>
+  </div>
+</main>
+
+<!-- ROOM -->
+<div id="room" class="screen room-screen">
+  <header class="room-bar">
+    <div class="ticket" title="Share this code with your friends">
+      <span class="ticket-label">Room</span>
+      <span class="ticket-code" id="room-code-display">-----</span>
+    </div>
+    <div class="room-meta">
+      <span class="status-dot" id="conn-dot"></span>
+      <span id="member-count">1 in the room</span>
+      <span id="host-badge" class="badge" hidden>You're hosting</span>
+    </div>
+    <button id="leave-btn" class="btn btn-ghost">Leave</button>
+  </header>
+
+  <div class="room-body">
+    <section class="stage">
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="file-input" accept="video/*" hidden>
+        <div class="dropzone-inner">
+          <p class="dropzone-title">No film loaded</p>
+          <p id="dropzone-sub" class="dropzone-sub">Drag a video file here, or click to browse</p>
+          <div id="upload-progress" class="upload-progress" hidden>
+            <div class="upload-progress-bar" id="upload-progress-bar"></div>
+          </div>
+        </div>
+      </div>
+
+      <video id="player" playsinline hidden></video>
+
+      <!-- Spectator-only: the host uses the native <video> control bar (play/pause/
+           seek/volume/fullscreen) exactly as before. Guests get native controls
+           hidden (so they can't drive playback) but this small bar lets them set
+           their own volume and go fullscreen locally. -->
+      <div id="guest-controls" class="custom-controls" hidden>
+        <div class="volume-wrap">
+          <button id="mute-btn" class="ctrl-btn" title="Mute">&#128266;</button>
+          <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1">
+        </div>
+        <button id="fullscreen-btn" class="ctrl-btn" title="Maximize">&#9974;</button>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="sidebar-section chat-section">
+        <h2>Chatter</h2>
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form" class="chat-form">
+          <input type="text" id="chat-input" placeholder="Say something..." maxlength="500" autocomplete="off">
+          <button type="submit" class="btn btn-small">Send</button>
+        </form>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
