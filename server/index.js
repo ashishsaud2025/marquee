@@ -8,8 +8,48 @@ const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const LIBRARY_FILE = path.join(UPLOAD_DIR, 'library.json');
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Video library: persists metadata (original filename, size, upload time) for
+// every file that's ever been uploaded, so the host can re-select an old
+// video after a server restart without losing its display name. Filenames on
+// disk are nanoid-based, so this is the only place the human-readable name
+// lives.
+function loadLibrary() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(LIBRARY_FILE, 'utf8'));
+    if (Array.isArray(parsed)) return parsed;
+  } catch (_) { /* missing or corrupt manifest, fall through to a rebuild */ }
+
+  // First run, or a manifest that didn't survive: rebuild from whatever's
+  // already sitting in the uploads folder so those files aren't orphaned.
+  try {
+    return fs.readdirSync(UPLOAD_DIR)
+      .filter((f) => f !== 'library.json' && f !== '.gitkeep')
+      .map((filename) => {
+        const stat = fs.statSync(path.join(UPLOAD_DIR, filename));
+        return {
+          filename,
+          originalName: filename,
+          url: `/videos/${filename}`,
+          size: stat.size,
+          uploadedAt: stat.mtimeMs
+        };
+      });
+  } catch (_) {
+    return [];
+  }
+}
+
+let library = loadLibrary();
+
+function saveLibrary() {
+  fs.writeFile(LIBRARY_FILE, JSON.stringify(library, null, 2), (err) => {
+    if (err) console.error('Failed to save video library:', err);
+  });
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -42,10 +82,40 @@ const upload = multer({
 
 app.post('/api/upload', upload.single('video'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  res.json({
+  const entry = {
     filename: req.file.filename,
     originalName: req.file.originalname,
-    url: `/videos/${req.file.filename}`
+    url: `/videos/${req.file.filename}`,
+    size: req.file.size,
+    uploadedAt: Date.now()
+  };
+  library.push(entry);
+  saveLibrary();
+  res.json(entry);
+});
+
+// List every video available on the server, newest first. Self-heals if a
+// file was deleted out-of-band (e.g. manually from disk).
+app.get('/api/videos', (req, res) => {
+  const existing = library.filter((v) => fs.existsSync(path.join(UPLOAD_DIR, v.filename)));
+  if (existing.length !== library.length) {
+    library = existing;
+    saveLibrary();
+  }
+  res.json([...library].sort((a, b) => b.uploadedAt - a.uploadedAt));
+});
+
+// Remove a video from disk and from the library.
+app.delete('/api/videos/:filename', (req, res) => {
+  const filename = path.basename(req.params.filename); // guard against path traversal
+  const idx = library.findIndex((v) => v.filename === filename);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+
+  fs.unlink(path.join(UPLOAD_DIR, filename), (err) => {
+    if (err && err.code !== 'ENOENT') return res.status(500).json({ error: 'Could not delete file' });
+    library.splice(idx, 1);
+    saveLibrary();
+    res.json({ ok: true });
   });
 });
 

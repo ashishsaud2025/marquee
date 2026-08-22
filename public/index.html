@@ -62,16 +62,16 @@
       <span id="member-count">1 in the room</span>
       <span id="host-badge" class="badge" hidden>You're hosting</span>
     </div>
+    <button id="library-btn" class="btn btn-ghost" hidden>Change film</button>
     <button id="leave-btn" class="btn btn-ghost">Leave</button>
   </header>
 
   <div class="room-body">
     <section class="stage">
       <div id="dropzone" class="dropzone">
-        <input type="file" id="file-input" accept="video/*" hidden>
         <div class="dropzone-inner">
           <p class="dropzone-title">No film loaded</p>
-          <p id="dropzone-sub" class="dropzone-sub">Drag a video file here, or click to browse</p>
+          <p id="dropzone-sub" class="dropzone-sub">Drag a video file here, or click to choose one</p>
           <div id="upload-progress" class="upload-progress" hidden>
             <div class="upload-progress-bar" id="upload-progress-bar"></div>
           </div>
@@ -103,6 +103,31 @@
         </form>
       </div>
     </aside>
+  </div>
+
+  <!-- Host-only: pick a different film that's already on the server, or
+       upload a new one. Reachable any time via the "Change film" button,
+       even after a film is already playing. -->
+  <div id="library-modal" class="modal-overlay" hidden>
+    <div class="card modal">
+      <div class="modal-header">
+        <h2>Film library</h2>
+        <button id="library-close" class="ctrl-btn" type="button" title="Close">&#10005;</button>
+      </div>
+
+      <div id="library-dropzone" class="dropzone dropzone--inline">
+        <input type="file" id="library-file-input" accept="video/*" hidden>
+        <div class="dropzone-inner">
+          <p class="dropzone-title">Add a film</p>
+          <p id="library-dropzone-sub" class="dropzone-sub">Drag a video file here, or click to browse</p>
+          <div id="library-upload-progress" class="upload-progress" hidden>
+            <div class="upload-progress-bar" id="library-upload-progress-bar"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="library-list" class="library-list"></div>
+    </div>
   </div>
 </div>
 

@@ -19,11 +19,20 @@
 
   const dropzone = document.getElementById('dropzone');
   const dropzoneSub = document.getElementById('dropzone-sub');
-  const fileInput = document.getElementById('file-input');
   const uploadProgress = document.getElementById('upload-progress');
   const uploadProgressBar = document.getElementById('upload-progress-bar');
   const player = document.getElementById('player');
   const stageEl = document.querySelector('.stage');
+
+  const libraryBtn = document.getElementById('library-btn');
+  const libraryModal = document.getElementById('library-modal');
+  const libraryClose = document.getElementById('library-close');
+  const libraryList = document.getElementById('library-list');
+  const libraryDropzone = document.getElementById('library-dropzone');
+  const libraryFileInput = document.getElementById('library-file-input');
+  const libraryDropzoneSub = document.getElementById('library-dropzone-sub');
+  const libraryUploadProgress = document.getElementById('library-upload-progress');
+  const libraryUploadProgressBar = document.getElementById('library-upload-progress-bar');
 
   const guestControls = document.getElementById('guest-controls');
   const muteBtn = document.getElementById('mute-btn');
@@ -38,6 +47,7 @@
   let roomCode = null;
   let isHost = false;
   let myName = null;
+  let currentVideo = null; // { filename, originalName, url } of whatever's loaded, so the library can mark it
   let suppressPlayerEvents = false; // true while we're applying a remote sync, so we don't echo it back
   const DRIFT_TOLERANCE = 0.6; // seconds
 
@@ -94,13 +104,13 @@
 
     roomCodeDisplay.textContent = roomCode;
     hostBadge.hidden = !isHost;
+    libraryBtn.hidden = !isHost;
     updateMemberCount(res.memberCount || 1);
     player.controls = isHost; // host gets full native controls; guests don't drive playback
 
     dropzone.hidden = !!res.video;
     if (!isHost) {
       dropzoneSub.textContent = 'Waiting for the host to choose a film...';
-      fileInput.disabled = true;
     }
 
     if (res.video) {
@@ -130,10 +140,10 @@
   socket.on('promoted-to-host', () => {
     isHost = true;
     hostBadge.hidden = false;
+    libraryBtn.hidden = false;
     player.controls = true;
     guestControls.hidden = true;
-    fileInput.disabled = false;
-    dropzoneSub.textContent = 'Drag a video file here, or click to browse';
+    dropzoneSub.textContent = 'Drag a video file here, or click to choose one';
     appendSystemMessage("The host left, you're the host now.");
   });
 
@@ -143,6 +153,7 @@
   });
 
   function loadVideo(video, playback) {
+    currentVideo = video;
     dropzone.hidden = true;
     player.hidden = false;
     guestControls.hidden = isHost; // only guests get the local volume/fullscreen bar
@@ -162,24 +173,28 @@
   }
 
   // Upload (host only) 
-  dropzone.addEventListener('click', () => { if (isHost) fileInput.click(); });
-  fileInput.addEventListener('change', () => {
-    if (fileInput.files[0]) uploadFile(fileInput.files[0]);
-  });
+  // Clicking the big "no film loaded" zone opens the library so the host can
+  // either upload something new or reuse a film that's already on the
+  // server; dropping a file directly onto it still uploads immediately.
+  dropzone.addEventListener('click', () => { if (isHost) openLibrary(); });
 
   ['dragover', 'dragleave', 'drop'].forEach((evt) => {
     dropzone.addEventListener(evt, (e) => {
       e.preventDefault();
       if (!isHost) return;
       dropzone.classList.toggle('dragover', evt === 'dragover');
-      if (evt === 'drop' && e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+      if (evt === 'drop' && e.dataTransfer.files[0]) {
+        uploadFile(e.dataTransfer.files[0], { subEl: dropzoneSub, progressEl: uploadProgress, barEl: uploadProgressBar });
+      }
     });
   });
 
-  function uploadFile(file) {
+  // Shared upload routine, parameterized so both the main dropzone and the
+  // library modal's dropzone can drive it with their own status elements.
+  function uploadFile(file, { subEl, progressEl, barEl, onSuccess } = {}) {
     if (!isHost) return;
-    dropzoneSub.textContent = `Uploading ${file.name}...`;
-    uploadProgress.hidden = false;
+    if (subEl) subEl.textContent = `Uploading ${file.name}...`;
+    if (progressEl) progressEl.hidden = false;
 
     const form = new FormData();
     form.append('video', file);
@@ -187,25 +202,135 @@
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload');
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        uploadProgressBar.style.width = `${Math.round((e.loaded / e.total) * 100)}%`;
+      if (e.lengthComputable && barEl) {
+        barEl.style.width = `${Math.round((e.loaded / e.total) * 100)}%`;
       }
     };
     xhr.onload = () => {
-      uploadProgress.hidden = true;
-      uploadProgressBar.style.width = '0%';
+      if (progressEl) progressEl.hidden = true;
+      if (barEl) barEl.style.width = '0%';
       if (xhr.status !== 200) {
-        dropzoneSub.textContent = 'Upload failed. Try a different file.';
+        if (subEl) subEl.textContent = 'Upload failed. Try a different file.';
         return;
       }
       const data = JSON.parse(xhr.responseText);
       socket.emit('set-video', data);
+      if (onSuccess) onSuccess(data);
     };
     xhr.onerror = () => {
-      uploadProgress.hidden = true;
-      dropzoneSub.textContent = 'Upload failed, check your connection.';
+      if (progressEl) progressEl.hidden = true;
+      if (subEl) subEl.textContent = 'Upload failed, check your connection.';
     };
     xhr.send(form);
+  }
+
+  // Film library (host only): browse everything already uploaded to the
+  // server and switch to it, upload a new film, or delete an old one.
+  function openLibrary() {
+    if (!isHost) return;
+    libraryModal.hidden = false;
+    refreshLibrary();
+  }
+  function closeLibrary() { libraryModal.hidden = true; }
+
+  libraryBtn.addEventListener('click', openLibrary);
+  libraryClose.addEventListener('click', closeLibrary);
+  libraryModal.addEventListener('click', (e) => { if (e.target === libraryModal) closeLibrary(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !libraryModal.hidden) closeLibrary();
+  });
+
+  libraryDropzone.addEventListener('click', () => { if (isHost) libraryFileInput.click(); });
+  libraryFileInput.addEventListener('change', () => {
+    if (libraryFileInput.files[0]) uploadToLibrary(libraryFileInput.files[0]);
+    libraryFileInput.value = '';
+  });
+  ['dragover', 'dragleave', 'drop'].forEach((evt) => {
+    libraryDropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      if (!isHost) return;
+      libraryDropzone.classList.toggle('dragover', evt === 'dragover');
+      if (evt === 'drop' && e.dataTransfer.files[0]) uploadToLibrary(e.dataTransfer.files[0]);
+    });
+  });
+
+  function uploadToLibrary(file) {
+    uploadFile(file, {
+      subEl: libraryDropzoneSub,
+      progressEl: libraryUploadProgress,
+      barEl: libraryUploadProgressBar,
+      onSuccess: () => {
+        libraryDropzoneSub.textContent = 'Drag a video file here, or click to browse';
+        closeLibrary();
+      }
+    });
+  }
+
+  function formatSize(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let n = bytes;
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i += 1; }
+    return `${n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
+  }
+
+  async function refreshLibrary() {
+    libraryList.innerHTML = '<p class="library-empty">Loading...</p>';
+    let videos;
+    try {
+      const res = await fetch('/api/videos');
+      videos = await res.json();
+    } catch (_) {
+      libraryList.innerHTML = '<p class="library-empty">Could not load the library.</p>';
+      return;
+    }
+
+    if (!videos.length) {
+      libraryList.innerHTML = '<p class="library-empty">No films uploaded yet. Add one above.</p>';
+      return;
+    }
+
+    libraryList.innerHTML = '';
+    videos.forEach((v) => {
+      const isActive = currentVideo && currentVideo.filename === v.filename;
+
+      const row = document.createElement('div');
+      row.className = 'library-item';
+      row.innerHTML = `
+        <div class="library-item-info">
+          <p class="library-item-name"></p>
+          <p class="library-item-meta"></p>
+        </div>
+        <button type="button" class="btn btn-small library-play-btn"></button>
+        <button type="button" class="ctrl-btn library-delete-btn" title="Remove from server">&#128465;</button>
+      `;
+
+      const nameEl = row.querySelector('.library-item-name');
+      nameEl.textContent = v.originalName || v.filename;
+      nameEl.title = v.originalName || v.filename;
+      row.querySelector('.library-item-meta').textContent = formatSize(v.size);
+
+      const playBtn = row.querySelector('.library-play-btn');
+      playBtn.textContent = isActive ? 'Playing' : 'Play';
+      playBtn.disabled = isActive;
+      playBtn.addEventListener('click', () => {
+        socket.emit('set-video', { filename: v.filename, originalName: v.originalName, url: v.url });
+        closeLibrary();
+      });
+
+      row.querySelector('.library-delete-btn').addEventListener('click', async () => {
+        row.style.opacity = '0.5';
+        try {
+          await fetch(`/api/videos/${encodeURIComponent(v.filename)}`, { method: 'DELETE' });
+          refreshLibrary();
+        } catch (_) {
+          row.style.opacity = '1';
+        }
+      });
+
+      libraryList.appendChild(row);
+    });
   }
 
   // Host: broadcast playback actions 
