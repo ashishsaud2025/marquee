@@ -17,6 +17,17 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // video after a server restart without losing its display name. Filenames on
 // disk are nanoid-based, so this is the only place the human-readable name
 // lives.
+function libraryEntryFromFile(filename) {
+  const stat = fs.statSync(path.join(UPLOAD_DIR, filename));
+  return {
+    filename,
+    originalName: filename, // no upload metadata for this one, so just show the filename
+    url: `/videos/${filename}`,
+    size: stat.size,
+    uploadedAt: stat.mtimeMs
+  };
+}
+
 function loadLibrary() {
   try {
     const parsed = JSON.parse(fs.readFileSync(LIBRARY_FILE, 'utf8'));
@@ -28,16 +39,7 @@ function loadLibrary() {
   try {
     return fs.readdirSync(UPLOAD_DIR)
       .filter((f) => f !== 'library.json' && f !== '.gitkeep')
-      .map((filename) => {
-        const stat = fs.statSync(path.join(UPLOAD_DIR, filename));
-        return {
-          filename,
-          originalName: filename,
-          url: `/videos/${filename}`,
-          size: stat.size,
-          uploadedAt: stat.mtimeMs
-        };
-      });
+      .map(libraryEntryFromFile);
   } catch (_) {
     return [];
   }
@@ -49,6 +51,29 @@ function saveLibrary() {
   fs.writeFile(LIBRARY_FILE, JSON.stringify(library, null, 2), (err) => {
     if (err) console.error('Failed to save video library:', err);
   });
+}
+
+// Reconciles the in-memory library against what's actually in the uploads
+// folder: drops entries whose file is gone, and picks up any file that
+// landed there some other way (e.g. copied in by hand rather than through
+// the upload endpoint). Called before every /api/videos response so manual
+// additions/removals show up without a server restart.
+function reconcileLibrary() {
+  let changed = false;
+
+  const onDisk = new Set(
+    fs.readdirSync(UPLOAD_DIR).filter((f) => f !== 'library.json' && f !== '.gitkeep')
+  );
+
+  const stillPresent = library.filter((v) => onDisk.has(v.filename));
+  if (stillPresent.length !== library.length) changed = true;
+
+  const known = new Set(stillPresent.map((v) => v.filename));
+  const untracked = [...onDisk].filter((f) => !known.has(f));
+  if (untracked.length) changed = true;
+
+  library = [...stillPresent, ...untracked.map(libraryEntryFromFile)];
+  if (changed) saveLibrary();
 }
 
 const app = express();
@@ -95,12 +120,12 @@ app.post('/api/upload', upload.single('video'), (req, res) => {
 });
 
 // List every video available on the server, newest first. Self-heals if a
-// file was deleted out-of-band (e.g. manually from disk).
+// file was deleted, or added, from outside the app (e.g. manually on disk).
 app.get('/api/videos', (req, res) => {
-  const existing = library.filter((v) => fs.existsSync(path.join(UPLOAD_DIR, v.filename)));
-  if (existing.length !== library.length) {
-    library = existing;
-    saveLibrary();
+  try {
+    reconcileLibrary();
+  } catch (err) {
+    return res.status(500).json({ error: 'Could not read the uploads folder' });
   }
   res.json([...library].sort((a, b) => b.uploadedAt - a.uploadedAt));
 });
