@@ -4,14 +4,17 @@ Pick a video from your device, upload it once as the host, share a room code, an
 
 ## How it works
 
-* The **host** uploads a video file. It is stored on the server in `server/uploads/` and served with HTTP range support, so seeking and scrubbing work properly.
-* Everyone in the room gets a `<video>` element that points to the video stored on the server. Guests don't need their own copy of the file.
+* The **host** uploads a video file or pastes a URL. Files are stored on the server in `server/uploads/` and served with HTTP range support, so seeking and scrubbing work properly.
+* For **YouTube/Vimeo URLs**, videos are embedded via iframe and synced using platform APIs.
+* For **direct video URLs** (MP4, WebM, etc.), videos are downloaded to the server using yt-dlp and served like uploaded files.
+* Everyone in the room gets a `<video>` element or iframe that points to the video. Guests don't need their own copy of the file.
 * **Socket.io** keeps playback synchronized. When the host plays, pauses, or seeks, everyone else receives the same event. Guests also perform a background sync check every 5 seconds to correct any playback drift.
 * If the host disconnects, the next person in the room is automatically promoted to host. They can then upload videos and control playback.
 
 ## Requirements
 
 * Node.js 18 or newer
+* **yt-dlp** (optional, for downloading videos from URLs)
 
 ## Setup
 
@@ -21,6 +24,42 @@ npm start
 ```
 
 Then open http://localhost:3000 in your browser.
+
+### Installing yt-dlp (optional)
+
+To use the URL feature for downloading videos from direct URLs, you need [yt-dlp](https://github.com/yt-dlp/yt-dlp):
+
+```bash
+# macOS
+brew install yt-dlp
+
+# Windows
+pip install yt-dlp
+
+# Linux
+sudo apt install yt-dlp
+# or
+pip install yt-dlp
+```
+
+**Note:** YouTube and Vimeo URLs work without yt-dlp (they use iframe embeds). yt-dlp is only needed for direct video URL downloads.
+
+## Features
+
+### Upload Videos
+Drag and drop a video file or click to browse. Supports MP4, WebM, and other common video formats.
+
+### Load from URL
+Paste a video URL in the film library:
+- **YouTube**: `https://youtube.com/watch?v=...` or `https://youtu.be/...`
+- **Vimeo**: `https://vimeo.com/...`
+- **Direct URLs**: `https://example.com/video.mp4` (requires yt-dlp)
+
+### Watch Together
+- Share the 5-character room code with friends
+- Host controls playback (play/pause/seek)
+- Guests can adjust volume and fullscreen locally
+- Built-in chat for commenting
 
 ## Using it with friends over the internet
 
@@ -50,15 +89,38 @@ You can then share the generated public URL with your friends.
 
 ```text
 server/
-  index.js        Express + Socket.io backend, upload endpoint, room/sync logic
-  uploads/         Uploaded video files land here (gitignored)
+  index.js          Express + Socket.io backend, upload endpoint, room/sync logic
+  url-handler.js    URL detection, YouTube/Vimeo ID extraction, yt-dlp download
+  uploads/          Uploaded video files land here (gitignored)
 public/
-  index.html       App shell with landing and room screens
-  style.css        Styling
-  app.js           Client logic for rooms, uploads, playback sync, and chat
+  index.html        App shell with landing and room screens
+  style.css         Styling
+  app.js            Client logic for rooms, uploads, playback sync, and chat
 test/
-  smoke.js         End-to-end smoke test
+  smoke.js          End-to-end smoke test
 ```
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/upload` | Upload a video file (multipart/form-data) |
+| GET | `/api/videos` | List all videos in the library |
+| DELETE | `/api/videos/:filename` | Delete a video from the library |
+| POST | `/api/url` | Load video from URL (JSON body: `{url}`) |
+
+## Socket.io Events
+
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `create-room` | Client→Server | Create a new room |
+| `join-room` | Client→Server | Join an existing room |
+| `set-video` | Client→Server | Host sets current video |
+| `play` | Client→Server | Host plays video |
+| `pause` | Client→Server | Host pauses video |
+| `seek` | Client→Server | Host seeks video |
+| `video-changed` | Server→Client | Video source updated |
+| `member-update` | Server→Client | Room membership changed |
 
 ## Things to improve before wider use
 

@@ -5,6 +5,7 @@ const express = require('express');
 const multer = require('multer');
 const { nanoid } = require('nanoid');
 const { Server } = require('socket.io');
+const { detectUrlType, downloadVideo, isYtdlpAvailable } = require('./url-handler');
 
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
@@ -149,6 +150,67 @@ app.use((err, req, res, next) => {
   res.status(400).json({ error: err.message || 'Upload failed' });
 });
 
+// URL video endpoint
+app.post('/api/url', express.json(), async (req, res) => {
+  const { url } = req.body;
+  
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  const urlType = detectUrlType(url);
+
+  if (urlType.type === 'unsupported') {
+    return res.status(400).json({ error: 'Unsupported URL format. Please use YouTube, Vimeo, or direct video URLs.' });
+  }
+
+  // For iframe types (YouTube/Vimeo), return metadata immediately
+  if (urlType.type === 'iframe') {
+    const entry = {
+      type: 'iframe',
+      platform: urlType.platform,
+      videoId: urlType.videoId,
+      originalName: `${urlType.platform} video`,
+      url: url
+    };
+    return res.json(entry);
+  }
+
+  // For direct URLs, check if yt-dlp is available
+  const hasYtdlp = await isYtdlpAvailable();
+  if (!hasYtdlp) {
+    return res.status(500).json({ 
+      error: 'yt-dlp is not installed. Please install it to download videos from URLs.',
+      hint: 'Install with: pip install yt-dlp'
+    });
+  }
+
+  // Download the video
+  try {
+    const result = await downloadVideo(url, {
+      onProgress: (progress) => {
+        // Could emit progress via socket if needed
+      }
+    });
+
+    const entry = {
+      filename: result.filename,
+      originalName: result.originalName,
+      url: result.url,
+      size: fs.statSync(path.join(UPLOAD_DIR, result.filename)).size,
+      uploadedAt: Date.now()
+    };
+
+    library.push(entry);
+    saveLibrary();
+
+    res.json(entry);
+  } catch (err) {
+    console.error('URL download failed:', err);
+    res.status(500).json({ error: `Failed to download video: ${err.message}` });
+  }
+});
+
 // Room / sync state 
 // rooms: Map<roomCode, {
 //   hostId: string,
@@ -234,10 +296,10 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('set-video', ({ filename, originalName, url } = {}) => {
+  socket.on('set-video', ({ filename, originalName, url, type, platform, videoId } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.hostId !== socket.id) return; // only host can set video
-    room.video = { filename, originalName, url };
+    room.video = { filename, originalName, url, type, platform, videoId };
     room.playback = { playing: false, currentTime: 0, updatedAt: Date.now() };
     io.to(socket.data.roomCode).emit('video-changed', room.video);
   });

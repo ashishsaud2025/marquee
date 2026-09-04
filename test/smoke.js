@@ -74,6 +74,48 @@ async function main() {
   log('range request check:', rangeCheck);
   if (rangeCheck.status !== 206) throw new Error('Range requests not working (expected 206 Partial Content)');
 
+  // URL detection endpoint
+  const urlRes = await new Promise((resolve, reject) => {
+    const body = JSON.stringify({ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' });
+    const req = http.request(
+      { hostname: 'localhost', port: 3000, path: '/api/url', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(data) }));
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+  log('url detection response:', urlRes.status, urlRes.body);
+  if (urlRes.status !== 200 || urlRes.body.platform !== 'youtube') {
+    throw new Error('URL detection failed for YouTube');
+  }
+
+  // Invalid URL should fail
+  const badUrlRes = await new Promise((resolve, reject) => {
+    const body = JSON.stringify({ url: 'not-a-valid-url' });
+    const req = http.request(
+      { hostname: 'localhost', port: 3000, path: '/api/url', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(data) }));
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+  log('bad url response:', badUrlRes.status);
+  if (badUrlRes.status !== 400) {
+    throw new Error('Invalid URL should return 400');
+  }
+
   // Playback sync: host plays, guest should receive it 
   const playPromise = new Promise((res) => guest.once('play', res));
   host.emit('play', { currentTime: 12.5 });

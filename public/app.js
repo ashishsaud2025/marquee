@@ -1,6 +1,17 @@
 (() => {
   const socket = io();
 
+  // YouTube IFrame API
+  let youtubeAPIReady = false;
+  let youtubePlayer = null;
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+
+  window.onYouTubeIframeAPIReady = () => {
+    youtubeAPIReady = true;
+  };
+
   // Elements 
   const landing = document.getElementById('landing');
   const roomScreen = document.getElementById('room');
@@ -33,6 +44,12 @@
   const libraryDropzoneSub = document.getElementById('library-dropzone-sub');
   const libraryUploadProgress = document.getElementById('library-upload-progress');
   const libraryUploadProgressBar = document.getElementById('library-upload-progress-bar');
+
+  const urlForm = document.getElementById('url-form');
+  const urlInput = document.getElementById('url-input');
+  const urlError = document.getElementById('url-error');
+  const urlProgress = document.getElementById('url-progress');
+  const urlProgressBar = document.getElementById('url-progress-bar');
 
   const guestControls = document.getElementById('guest-controls');
   const muteBtn = document.getElementById('mute-btn');
@@ -149,14 +166,23 @@
 
   // Video source 
   socket.on('video-changed', (video) => {
+    removeIframePlayer();
     loadVideo(video, { playing: false, currentTime: 0 });
   });
 
   function loadVideo(video, playback) {
     currentVideo = video;
     dropzone.hidden = true;
+
+    // Handle iframe videos (YouTube/Vimeo)
+    if (video.type === 'iframe') {
+      loadIframeVideo(video, playback);
+      return;
+    }
+
+    // Handle regular video files
     player.hidden = false;
-    guestControls.hidden = isHost; // only guests get the local volume/fullscreen bar
+    guestControls.hidden = isHost;
     player.src = video.url;
 
     const applyInitialSync = () => {
@@ -170,6 +196,173 @@
 
     if (player.readyState >= 1) applyInitialSync();
     else player.addEventListener('loadedmetadata', applyInitialSync, { once: true });
+  }
+
+  function loadIframeVideo(video, playback) {
+    // Hide native video player, create iframe container
+    player.hidden = true;
+    guestControls.hidden = true;
+
+    // Remove existing iframe if any
+    const existingIframe = document.getElementById('iframe-player');
+    if (existingIframe) existingIframe.remove();
+
+    // Create iframe container
+    const iframeContainer = document.createElement('div');
+    iframeContainer.id = 'iframe-player';
+    iframeContainer.className = 'iframe-container';
+    stageEl.appendChild(iframeContainer);
+
+    if (video.platform === 'youtube') {
+      loadYouTubePlayer(iframeContainer, video.videoId, playback);
+    } else if (video.platform === 'vimeo') {
+      loadVimeoPlayer(iframeContainer, video.videoId, playback);
+    }
+  }
+
+  function loadYouTubePlayer(container, videoId, playback) {
+    // Wait for YouTube API to be ready
+    const waitForAPI = () => {
+      if (youtubeAPIReady) {
+        createYouTubePlayer(container, videoId, playback);
+      } else {
+        setTimeout(waitForAPI, 100);
+      }
+    };
+    waitForAPI();
+  }
+
+  function createYouTubePlayer(container, videoId, playback) {
+    // Guard against YT API not being loaded
+    if (typeof YT === 'undefined' || !YT.Player) {
+      urlError.textContent = 'YouTube player failed to load. Check your internet connection.';
+      return;
+    }
+
+    const playerDiv = document.createElement('div');
+    playerDiv.id = 'youtube-player';
+    container.appendChild(playerDiv);
+
+    // Track the last known time so we can detect seeks on state change
+    let lastKnownTime = playback.currentTime || 0;
+
+    youtubePlayer = new YT.Player('youtube-player', {
+      height: '100%',
+      width: '100%',
+      videoId: videoId,
+      playerVars: {
+        autoplay: 0,
+        controls: isHost ? 1 : 0,
+        disablekb: !isHost,
+        modestbranding: 1,
+        rel: 0,
+        playsinline: 1
+      },
+      events: {
+        onReady: (event) => {
+          // Apply initial sync
+          suppressPlayerEvents = true;
+          event.target.seekTo(playback.currentTime || 0, true);
+          if (playback.playing) {
+            event.target.playVideo();
+          }
+          suppressPlayerEvents = false;
+        },
+        onStateChange: (event) => {
+          if (suppressPlayerEvents || !isHost) return;
+          const player = event.target;
+          const currentTime = player.getCurrentTime();
+          lastKnownTime = currentTime;
+
+          if (event.data === YT.PlayerState.PLAYING) {
+            socket.emit('play', { currentTime });
+          } else if (event.data === YT.PlayerState.PAUSED) {
+            socket.emit('pause', { currentTime });
+          } else if (event.data === YT.PlayerState.ENDED) {
+            socket.emit('pause', { currentTime });
+          }
+        },
+        onError: (event) => {
+          let message = 'Unable to play this video.';
+          if (event.data === 2) message = 'This video is invalid or unavailable.';
+          else if (event.data === 5) message = 'This video cannot be played in the embedded player.';
+          else if (event.data === 100) message = 'This video has been removed or is unavailable.';
+          else if (event.data === 101 || event.data === 150) message = 'The owner of this video does not allow playback on other sites.';
+          urlError.textContent = message;
+          urlError.style.display = 'block';
+          appendSystemMessage(`Error: ${message}`);
+        },
+        onPlaybackRateChange: () => {}
+      }
+    });
+  }
+
+  function loadVimeoPlayer(container, videoId, playback) {
+    // Load Vimeo Player API
+    if (!window.Vimeo) {
+      const script = document.createElement('script');
+      script.src = 'https://player.vimeo.com/api/player.js';
+      script.onload = () => createVimeoPlayer(container, videoId, playback);
+      document.head.appendChild(script);
+    } else {
+      createVimeoPlayer(container, videoId, playback);
+    }
+  }
+
+  function createVimeoPlayer(container, videoId, playback) {
+    const iframe = document.createElement('iframe');
+    iframe.src = `https://player.vimeo.com/video/${videoId}?api=1&player_id=vimeo-player`;
+    iframe.id = 'vimeo-player';
+    iframe.allow = 'autoplay; fullscreen; picture-in-picture';
+    iframe.allowFullscreen = true;
+    container.appendChild(iframe);
+
+    // Wait for Vimeo API to load
+    const waitForVimeo = () => {
+      if (window.Vimeo && window.Vimeo.Player) {
+        const vimeoPlayer = new Vimeo.Player(iframe);
+
+        // Apply initial sync
+        vimeoPlayer.setCurrentTime(playback.currentTime || 0).then(() => {
+          if (playback.playing) {
+            vimeoPlayer.play();
+          }
+        });
+
+        // Add event listeners for host
+        if (isHost) {
+          vimeoPlayer.on('play', () => {
+            if (suppressPlayerEvents) return;
+            vimeoPlayer.getCurrentTime().then((currentTime) => {
+              socket.emit('play', { currentTime });
+            });
+          });
+
+          vimeoPlayer.on('pause', () => {
+            if (suppressPlayerEvents) return;
+            vimeoPlayer.getCurrentTime().then((currentTime) => {
+              socket.emit('pause', { currentTime });
+            });
+          });
+
+          vimeoPlayer.on('seeked', () => {
+            if (suppressPlayerEvents) return;
+            vimeoPlayer.getCurrentTime().then((currentTime) => {
+              socket.emit('seek', { currentTime });
+            });
+          });
+        }
+      } else {
+        setTimeout(waitForVimeo, 100);
+      }
+    };
+    waitForVimeo();
+  }
+
+  function removeIframePlayer() {
+    const existingIframe = document.getElementById('iframe-player');
+    if (existingIframe) existingIframe.remove();
+    youtubePlayer = null;
   }
 
   // Upload (host only) 
@@ -265,6 +458,48 @@
       }
     });
   }
+
+  // URL video loading
+  urlForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = urlInput.value.trim();
+    if (!url) return;
+
+    if (!isHost) {
+      urlError.textContent = 'Only the host can load videos.';
+      return;
+    }
+
+    urlError.textContent = '';
+    urlProgress.hidden = false;
+    urlProgressBar.style.width = '0%';
+    urlInput.disabled = true;
+
+    try {
+      const res = await fetch('/api/url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        urlError.textContent = data.error || 'Failed to load video';
+        return;
+      }
+
+      socket.emit('set-video', data);
+      closeLibrary();
+    } catch (err) {
+      urlError.textContent = 'Network error. Please try again.';
+    } finally {
+      urlProgress.hidden = true;
+      urlProgressBar.style.width = '0%';
+      urlInput.disabled = false;
+      urlInput.value = '';
+    }
+  });
 
   function formatSize(bytes) {
     if (!bytes && bytes !== 0) return '';
@@ -364,15 +599,27 @@
 
   // Guests: apply incoming playback events 
   socket.on('play', ({ currentTime }) => applyRemote(() => {
-    if (Math.abs(player.currentTime - currentTime) > DRIFT_TOLERANCE) player.currentTime = currentTime;
-    player.play().catch(() => {});
+    if (currentVideo && currentVideo.type === 'iframe') {
+      applyIframePlay(currentTime);
+    } else {
+      if (Math.abs(player.currentTime - currentTime) > DRIFT_TOLERANCE) player.currentTime = currentTime;
+      player.play().catch(() => {});
+    }
   }));
   socket.on('pause', ({ currentTime }) => applyRemote(() => {
-    player.currentTime = currentTime;
-    player.pause();
+    if (currentVideo && currentVideo.type === 'iframe') {
+      applyIframePause(currentTime);
+    } else {
+      player.currentTime = currentTime;
+      player.pause();
+    }
   }));
   socket.on('seek', ({ currentTime }) => applyRemote(() => {
-    player.currentTime = currentTime;
+    if (currentVideo && currentVideo.type === 'iframe') {
+      applyIframeSeek(currentTime);
+    } else {
+      player.currentTime = currentTime;
+    }
   }));
 
   function applyRemote(fn) {
@@ -382,17 +629,100 @@
     setTimeout(() => { suppressPlayerEvents = false; }, 50);
   }
 
+  function applyIframePlay(currentTime) {
+    if (currentVideo.platform === 'youtube' && youtubePlayer) {
+      youtubePlayer.seekTo(currentTime, true);
+      youtubePlayer.playVideo();
+    } else if (currentVideo.platform === 'vimeo') {
+      const iframe = document.getElementById('vimeo-player');
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({
+          method: 'setCurrentTime',
+          value: currentTime
+        }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({
+          method: 'play'
+        }), '*');
+      }
+    }
+  }
+
+  function applyIframePause(currentTime) {
+    if (currentVideo.platform === 'youtube' && youtubePlayer) {
+      youtubePlayer.seekTo(currentTime, true);
+      youtubePlayer.pauseVideo();
+    } else if (currentVideo.platform === 'vimeo') {
+      const iframe = document.getElementById('vimeo-player');
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({
+          method: 'setCurrentTime',
+          value: currentTime
+        }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({
+          method: 'pause'
+        }), '*');
+      }
+    }
+  }
+
+  function applyIframeSeek(currentTime) {
+    if (currentVideo.platform === 'youtube' && youtubePlayer) {
+      youtubePlayer.seekTo(currentTime, true);
+    } else if (currentVideo.platform === 'vimeo') {
+      const iframe = document.getElementById('vimeo-player');
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({
+          method: 'setCurrentTime',
+          value: currentTime
+        }), '*');
+      }
+    }
+  }
+
+  function getIframeCurrentTime() {
+    if (currentVideo.platform === 'youtube' && youtubePlayer) {
+      return youtubePlayer.getCurrentTime();
+    }
+    return player.currentTime;
+  }
+
+  function isIframePlaying() {
+    if (currentVideo.platform === 'youtube' && youtubePlayer) {
+      return youtubePlayer.getPlayerState() === YT.PlayerState.PLAYING;
+    }
+    return !player.paused;
+  }
+
   // Guests: periodic drift correction 
   setInterval(() => {
-    if (isHost || !roomCode || player.hidden) return;
+    if (isHost || !roomCode) return;
+    
+    // Check if we have a video loaded (either native or iframe)
+    const hasVideo = (!player.hidden) || (currentVideo && currentVideo.type === 'iframe');
+    if (!hasVideo) return;
+
     socket.emit('sync-request', {}, (state) => {
       if (!state) return;
-      const drift = Math.abs(player.currentTime - state.currentTime);
+      
+      let currentTime;
+      if (currentVideo && currentVideo.type === 'iframe') {
+        currentTime = getIframeCurrentTime();
+      } else {
+        currentTime = player.currentTime;
+      }
+      
+      const drift = Math.abs(currentTime - state.currentTime);
       if (drift > 1.5) {
         applyRemote(() => {
-          player.currentTime = state.currentTime;
-          if (state.playing) player.play().catch(() => {});
-          else player.pause();
+          if (currentVideo && currentVideo.type === 'iframe') {
+            applyIframeSeek(state.currentTime);
+            if (state.playing) applyIframePlay(state.currentTime);
+            else applyIframePause(state.currentTime);
+          } else {
+            player.currentTime = state.currentTime;
+            if (state.playing) player.play().catch(() => {});
+            else player.pause();
+          }
         });
       }
     });
