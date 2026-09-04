@@ -204,33 +204,27 @@ graph LR
 ```mermaid
 stateDiagram-v2
     [*] --> Empty
-    
-    Empty --> HasHost: create-room
-    HasHost --> HasHost+Guest: join-room
-    
-    state HasHost {
-        [*] --> NoVideo
-        NoVideo --> HasVideo: set-video
-        HasVideo --> Playing: play
-        Playing --> Paused: pause
-        Paused --> Playing: play
-        Playing --> Seeking: seek
-        Paused --> Seeking: seek
-        Seeking --> Playing: (playing)
-        Seeking --> Paused: (paused)
-    }
 
-    HasHost+Guest --> HasHost: Guest leaves
-    HasHost+Guest --> HasHost+Guest: Another joins
+    Empty --> HasHost: create-room
+    HasHost --> HasHostWithGuest: join-room
+
+    HasHost --> NoVideo
+    HasHostWithGuest --> NoVideo
+
+    NoVideo --> HasVideo: set-video
+    HasVideo --> Playing: play
+    Playing --> Paused: pause
+    Paused --> Playing: play
+    Playing --> Playing: seek
+    Paused --> Playing: seek
+
+    HasHostWithGuest --> HasHost: Guest leaves
+    HasHostWithGuest --> HasHostWithGuest: Another joins
     HasHost --> HasGuest: Host leaves (promote)
-    HasHost+Guest --> HasGuest: Host leaves (promote)
-    
+    HasHostWithGuest --> HasGuest: Host leaves (promote)
+
+    HasGuest --> NoVideo
     HasGuest --> [*]: Last leaves
-    
-    state HasGuest {
-        [*] --> WaitingForHost
-        WaitingForHost --> HasVideo: set-video
-    }
 ```
 
 ## Data Flow Diagrams
